@@ -20,6 +20,7 @@ namespace Shadowsocks.Controller.Service
         private readonly Process _pluginProcess;
         private bool _started;
         private bool _disposed;
+        private Sip003Plugin plugin4plugin;
 
         public static Sip003Plugin CreateIfConfigured(Server server, bool showPluginOutput)
         {
@@ -54,6 +55,24 @@ namespace Shadowsocks.Controller.Service
                 throw new ArgumentOutOfRangeException("serverPort");
             }
 
+            if (!string.IsNullOrWhiteSpace(pluginArgs) && !string.IsNullOrWhiteSpace(pluginOpts) && !pluginOpts.StartsWith("-"))
+            {
+                var plugin_opts = pluginOpts.Split(' ');
+                var plugin2 = plugin_opts[0];
+                plugin_opts[0] = "";
+                var plugin2_args = string.Join(" ", plugin_opts).Trim();
+                var server2 = serverAddress;
+                try
+                {
+                    server2 = Dns.GetHostEntry(serverAddress).AddressList[0].ToString();
+                }
+                catch (Exception)
+                {
+                    // Do Nothing
+                }
+                plugin4plugin = new Sip003Plugin(plugin2, "", plugin2_args, server2, serverPort, false);
+            }
+
             _pluginProcess = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -84,11 +103,22 @@ namespace Shadowsocks.Controller.Service
                 throw new ObjectDisposedException(GetType().FullName);
             }
 
+            if (plugin4plugin != null)
+            {
+                plugin4plugin.StartIfNeeded();
+            }
+
             lock (_startProcessLock)
             {
                 if (_started && !_pluginProcess.HasExited)
                 {
                     return false;
+                }
+
+                if (plugin4plugin != null)
+                {
+                    _pluginProcess.StartInfo.Environment["SS_REMOTE_HOST"] = plugin4plugin.LocalEndPoint.Address.ToString();
+                    _pluginProcess.StartInfo.Environment["SS_REMOTE_PORT"] = plugin4plugin.LocalEndPoint.Port.ToString();
                 }
 
                 var localPort = GetNextFreeTcpPort();
@@ -149,6 +179,11 @@ namespace Shadowsocks.Controller.Service
             if (_disposed)
             {
                 return;
+            }
+
+            if (plugin4plugin != null)
+            {
+                plugin4plugin.Dispose();
             }
 
             try
