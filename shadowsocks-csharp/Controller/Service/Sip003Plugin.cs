@@ -44,6 +44,11 @@ namespace Shadowsocks.Controller.Service
 
         private Sip003Plugin(string plugin, string pluginOpts, string pluginArgs, string serverAddress, int serverPort, bool showPluginOutput)
         {
+            if (!string.IsNullOrEmpty(pluginArgs) && pluginArgs.ToUpper().Equals("CMD"))
+            {
+                pluginArgs = string.Empty;
+            }
+
             if (plugin == null) throw new ArgumentNullException(nameof(plugin));
             if (string.IsNullOrWhiteSpace(serverAddress))
             {

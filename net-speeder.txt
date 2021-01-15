@@ -1,0 +1,41 @@
+wsl --list -v
+wsl --set-version debian 2
+debian config --default-user root
+
+
+
+update-alternatives --config iptables
+
+nano /etc/sysctl.conf
+net.ipv4.ip_forward = 1
+sysctl -p
+
+nano /etc/gai.conf
+precedence ::ffff:0:0/96  100
+
+nano /etc/apt/sources.list
+deb http://mirrors.aliyun.com/debian/ buster main
+deb http://mirrors.aliyun.com/debian/ buster-updates main
+deb http://mirrors.aliyun.com/debian-security buster/updates main
+deb http://mirrors.aliyun.com/debian/ buster-backports main
+
+apt update && apt install ethtool gcc libnet1-dev libpcap0.8-dev net-tools unzip wget -y
+
+cd /tmp
+wget https://github.com/snooda/net-speeder/archive/master.zip
+unzip master.zip
+cd net-speeder-master
+sh build.sh
+cp net_speeder /bin/net-speeder
+
+
+
+CMD
+cmd.txt
+debian run pkill net-speeder
+debian run ethtool -K eth0 tso off
+debian run iptables -t nat -F
+debian run iptables -t nat -A PREROUTING -p tcp --dport SS_REMOTE_PORT -j DNAT --to SS_REMOTE_HOST:SS_REMOTE_PORT
+debian run iptables -t nat -A POSTROUTING -d SS_REMOTE_HOST -p tcp --dport SS_REMOTE_PORT -j MASQUERADE
+debian run start-stop-daemon --start --background --pidfile /run/net-speeder.pid --exec /bin/net-speeder eth0 'tcp dst port SS_REMOTE_PORT and dst host SS_REMOTE_HOST'
+debian run "ifconfig eth0 | grep 'inet ' | awk '{print $2}'"

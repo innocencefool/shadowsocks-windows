@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -210,6 +211,8 @@ namespace Shadowsocks.Controller
             privoxyRunner.Stop();
             try
             {
+                var realServer = ForwardCMD(null);
+
                 var strategy = GetCurrentStrategy();
                 strategy?.ReloadServers();
 
@@ -231,6 +234,11 @@ namespace Shadowsocks.Controller
                 };
                 _listener = new Listener(services);
                 _listener.Start(_config);
+
+                if (!string.IsNullOrEmpty(realServer))
+                {
+                    ForwardCMD(realServer);
+                }
             }
             catch (Exception e)
             {
@@ -253,6 +261,72 @@ namespace Shadowsocks.Controller
 
             ConfigChanged?.Invoke(this, new EventArgs());
             UpdateSystemProxy();
+        }
+
+        private string ForwardCMD(string realServer)
+        {
+            try
+            {
+                var server = _config.GetCurrentServer();
+                if (!string.IsNullOrEmpty(realServer))
+                {
+                    server.server = realServer;
+                }
+                else if (!string.IsNullOrEmpty(server.plugin_args) && server.plugin_args.ToUpper().Equals("CMD"))
+                {
+                    List<string> output = null;
+                    var remoteServer = server.server;
+                    var remoteHost = Dns.GetHostEntry(server.server).AddressList[0].ToString();
+                    string[] cmds = File.ReadAllLines("cmd.txt");
+                    foreach (string cmd in cmds)
+                    {
+                        var command = cmd.Replace("SS_REMOTE_HOST", remoteHost).Replace("SS_REMOTE_PORT", server.server_port.ToString());
+                        output = RunCommand(command);
+                    }
+                    if (output != null && output.Count > 0)
+                    {
+                        var forwardServer = output[output.Count - 3];
+                        if (IPAddress.TryParse(forwardServer, out IPAddress ip))
+                        {
+                            logger.Info($"Started forwarding server on {forwardServer}");
+                            server.server = forwardServer;
+                            return remoteServer;
+                        }
+                    }
+                }
+                return null;
+            }
+            catch (Exception e)
+            {
+                logger.LogUsefulException(e);
+                return null;
+            }
+        }
+
+        private List<string> RunCommand(string command)
+        {
+            var output = new List<string>();
+            using (Process process = new Process())
+            {
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.RedirectStandardInput = true;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.UseShellExecute = false;
+                process.Start();
+                process.StandardInput.AutoFlush = true;
+                process.StandardInput.WriteLine(command);
+                process.StandardInput.Close();
+                while (!process.StandardOutput.EndOfStream)
+                {
+                    output.Add(process.StandardOutput.ReadLine());
+                }
+                process.WaitForExit();
+                process.Close();
+                process.Dispose();
+            }
+            return output;
         }
 
         protected void SaveConfig(Configuration newConfig)
